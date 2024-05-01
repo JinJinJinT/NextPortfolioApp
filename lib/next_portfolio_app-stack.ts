@@ -15,10 +15,11 @@ export class NextPortfolioAppStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // ECR Repository for storing built Docker images
     const repository = new ecr.Repository(this, "NextJsPortfolioRepository", {
+      // ECR Repository for storing built Docker images
       repositoryName: "nextjs-portfolio-images",
       removalPolicy: cdk.RemovalPolicy.DESTROY,
+      emptyOnDelete: true,
     });
 
     // VPC setup
@@ -37,8 +38,8 @@ export class NextPortfolioAppStack extends cdk.Stack {
       protocol: elbv2.ApplicationProtocol.HTTP,
     });
 
-    // Create ECS Cluster
     const cluster = new ecs.Cluster(this, "Cluster", { vpc });
+    // Create ECS Cluster
 
     // Register a task definition
     const taskDefinition = new ecs.FargateTaskDefinition(this, "TaskDef", {
@@ -317,10 +318,10 @@ export class NextPortfolioAppStack extends cdk.Stack {
       taskDefinitionTemplateInput: buildOutput,
     });
 
-    pipeline.addStage({
-      stageName: "Deploy",
-      actions: [deployAction],
-    });
+    // pipeline.addStage({
+    //   stageName: "Deploy",
+    //   actions: [deployAction],
+    // });
 
     // Note: Additional configurations for security groups, IAM roles, and Cloudflare DNS management need to be implemented outside of CDK.
   }
