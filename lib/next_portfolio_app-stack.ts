@@ -7,7 +7,11 @@ import * as codebuild from "aws-cdk-lib/aws-codebuild";
 import * as codeDeploy from "aws-cdk-lib/aws-codedeploy";
 import * as codepipeline from "aws-cdk-lib/aws-codepipeline";
 import * as codepipeline_actions from "aws-cdk-lib/aws-codepipeline-actions";
-import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
+import {
+  ApplicationLoadBalancer,
+  ApplicationProtocol,
+  ListenerAction,
+} from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as iam from "aws-cdk-lib/aws-iam";
 import { log } from "console";
 
@@ -26,7 +30,7 @@ export class NextPortfolioAppStack extends cdk.Stack {
     const vpc = new ec2.Vpc(this, "VPC");
 
     // Application Load Balancer
-    const alb = new elbv2.ApplicationLoadBalancer(this, "ALB", {
+    const alb = new ApplicationLoadBalancer(this, "ALB", {
       vpc,
       internetFacing: true,
     });
@@ -35,7 +39,7 @@ export class NextPortfolioAppStack extends cdk.Stack {
     const listener = alb.addListener("Listener", {
       port: 80,
       //defaultAction: elbv2.ListenerAction.forward([blueTargetGroup]),
-      protocol: elbv2.ApplicationProtocol.HTTP,
+      protocol: ApplicationProtocol.HTTP,
     });
 
     const cluster = new ecs.Cluster(this, "Cluster", { vpc });
@@ -85,7 +89,7 @@ export class NextPortfolioAppStack extends cdk.Stack {
     const blueTargetGroup = listener.addTargets("AddBlueTarget", {
       targetGroupName: "BlueTargetGroup",
       targets: [ecsService],
-      protocol: elbv2.ApplicationProtocol.HTTP,
+      protocol: ApplicationProtocol.HTTP,
       port: 3000,
     });
 
@@ -207,31 +211,10 @@ export class NextPortfolioAppStack extends cdk.Stack {
     // create deploy application
     const codeDeployApp = new codeDeploy.EcsApplication(this, "CodeDeployApp");
 
-    // Add Green Target Group to the listener (cannot use addTargets because we need 0% weight for the green target group)
-    // const greenTargetGroup = new elbv2.ApplicationTargetGroup(
-    //   this,
-    //   "GreenTargetGroup",
-    //   {
-    //     vpc: vpc,
-    //     port: 3000,
-    //     protocol: elbv2.ApplicationProtocol.HTTP,
-    //     targetType: elbv2.TargetType.IP,
-    //   }
-    // );
-    // const deploymentConfig = new codeDeploy.EcsDeploymentConfig(
-    //   this,
-    //   "DeploymentConfig",
-    //   {
-    //     trafficRouting: codeDeploy.TrafficRouting.timeBasedCanary({
-    //       interval: cdk.Duration.minutes(1),
-    //       percentage: 10,
-    //     }),
-    //   }
-    // );
     const greenTargetGroup = listener.addTargets("AddGreenTarget", {
       targetGroupName: "GreenTargetGroup",
       targets: [ecsService],
-      protocol: elbv2.ApplicationProtocol.HTTP,
+      protocol: ApplicationProtocol.HTTP,
       port: 3000,
     });
 
@@ -239,50 +222,28 @@ export class NextPortfolioAppStack extends cdk.Stack {
       targetGroups: [blueTargetGroup, greenTargetGroup],
     });
 
-    // const blueGreenDeploymentConfigurationProperty: codeDeploy.CfnDeploymentGroup.BlueGreenDeploymentConfigurationProperty =
-    //   {
-    //     deploymentReadyOption: {
-    //       actionOnTimeout: "CONTINUE_DEPLOYMENT",
-    //       waitTimeInMinutes: 2,
-    //     },
-    //     greenFleetProvisioningOption: {
-    //       action: "DISCOVER_EXISTING",
-    //     },
-    //     terminateBlueInstancesOnDeploymentSuccess: {
-    //       action: "TERMINATE",
-    //       terminationWaitTimeInMinutes: 10,
-    //     },
-    //   };
-
-    const CfnDeploymentConfig = new codeDeploy.CfnDeploymentConfig(
-      this,
-      "DeploymentConfig",
-      {
-        computePlatform: "ECS",
-        deploymentConfigName: "TimeBasedCanary10Percent",
-        minimumHealthyHosts: {
-          type: "FLEET_PERCENT",
-          value: 0,
+    listener.addAction("DefaultAction", {
+      action: ListenerAction.weightedForward([
+        {
+          targetGroup: blueTargetGroup,
+          weight: 100,
         },
-        trafficRoutingConfig: {
-          type: "TimeBasedLinear",
-          timeBasedLinear: {
-            linearInterval: 1,
-            linearPercentage: 10,
-          },
+        {
+          targetGroup: greenTargetGroup,
+          weight: 0,
         },
-      }
-    );
+      ]),
+    });
 
     const deployConfig = new codeDeploy.EcsDeploymentConfig(
       this,
       "DeployConfig",
       {
-        trafficRouting: codeDeploy.TrafficRouting.timeBasedCanary({
-          interval: cdk.Duration.minutes(1),
-          percentage: 10,
+        trafficRouting: codeDeploy.TrafficRouting.timeBasedLinear({
+          interval: cdk.Duration.seconds(30),
+          percentage: 15,
         }),
-        deploymentConfigName: "TimeBasedCanary10Percent",
+        deploymentConfigName: "Linear15PercentEvery30Seconds",
       }
     );
 
@@ -318,10 +279,10 @@ export class NextPortfolioAppStack extends cdk.Stack {
       taskDefinitionTemplateInput: buildOutput,
     });
 
-    // pipeline.addStage({
-    //   stageName: "Deploy",
-    //   actions: [deployAction],
-    // });
+    pipeline.addStage({
+      stageName: "Deploy",
+      actions: [deployAction],
+    });
 
     // Note: Additional configurations for security groups, IAM roles, and Cloudflare DNS management need to be implemented outside of CDK.
   }
