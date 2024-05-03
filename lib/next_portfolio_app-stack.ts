@@ -240,10 +240,10 @@ export class NextPortfolioAppStack extends cdk.Stack {
       "DeployConfig",
       {
         trafficRouting: codeDeploy.TrafficRouting.timeBasedLinear({
-          interval: cdk.Duration.seconds(30),
-          percentage: 15,
+          interval: cdk.Duration.minutes(1),
+          percentage: 25,
         }),
-        deploymentConfigName: "Linear15PercentEvery30Seconds",
+        deploymentConfigName: "Linear25Percent1Minute",
       }
     );
 
